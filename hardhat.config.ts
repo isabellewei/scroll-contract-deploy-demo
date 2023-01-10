@@ -7,7 +7,14 @@ dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.9",
+    compilers: [
+      {
+        version: "0.8.9",
+      },
+      {
+        version: "0.4.15",
+      },
+    ],
     settings: {
       optimizer: {
         enabled: true,
@@ -17,9 +24,8 @@ const config: HardhatUserConfig = {
   },
   networks: {
     scrollTestnet: {
-      url: process.env.SCROLL_TESTNET_URL || "",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+      url: 'https://prealpha.scroll.io/l2',
+      accounts: [process.env.PRIVATE_KEY!, process.env.PRIVATE_KEY2!, process.env.PRIVATE_KEY3!]
     },
   },
 };

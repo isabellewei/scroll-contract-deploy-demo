@@ -1,19 +1,49 @@
+import { ContractTransaction } from "ethers";
 import { ethers } from "hardhat";
 
+async function waitTxSuccess(tx: ContractTransaction){
+  const txReceipt = await tx.wait();
+  if (txReceipt.status !== 1) {
+    console.error("tx failed :(")
+  }
+  return txReceipt
+}
+
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-  const unlockTime = currentTimestampInSeconds + ONE_YEAR_IN_SECS;
+  // default is account1
+  const [account1, account2, account3] = await ethers.getSigners()
 
-  const lockedAmount = ethers.utils.parseEther("0.00000001");
+  // deploy contracts
+  const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
+  const OurToken = await ethers.getContractFactory("OurToken");
+  const multiSigWallet = await MultiSigWallet.deploy([account1.address, account2.address, account3.address], 2)
+  await multiSigWallet.deployed();
+  const ourToken = await OurToken.deploy()
+  await ourToken.deployed()
+  console.log(`MultiSigWallet contract deployed to ${multiSigWallet.address}`);
+  console.log(`OurToken contract deployed to ${ourToken.address}`);
 
-  const Lock = await ethers.getContractFactory("Lock");
-  const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+  // transfer ownership of OurToken to multisig
+  const transferTx = await ourToken.transferOwnership(multiSigWallet.address)
+  await waitTxSuccess(transferTx)
+  console.log("transferred ownership of NFT contract to multisig")
 
-  await lock.deployed();
+  // create and submit minting tx to multisig
+  const mintTx = await ourToken.populateTransaction.safeMint(account3.address, 1)
+  const multisigTx = await multiSigWallet.submitTransaction(mintTx.to || ourToken.address, 0, mintTx.data!)
+  const multisigTxReceipt = await waitTxSuccess(multisigTx)
+  const multisigTxId = multisigTxReceipt.events?.find(event => event.event === 'Submission')?.args?.transactionId
+  console.log("submitted mint transaction to multisig")
 
-  console.log(`Lock with 0.00000001 ETH and unlock timestamp ${unlockTime} deployed to ${lock.address}`);
-  console.log(`Block explorer URL: https://l2scan.scroll.io/address/${lock.address}`);
+  // vote to approve transaction
+  const approveTx = await multiSigWallet.connect(account2).confirmTransaction(multisigTxId)
+  await waitTxSuccess(approveTx)
+  console.log("voted in multisig to approve transaction")
+
+  // mint NFT
+  const doMintTx = await multiSigWallet.executeTransaction(multisigTxId, {gasLimit: 8000000})
+  await waitTxSuccess(doMintTx)
+  console.log("congrats! NFT minted through multisig")
 }
 
 // We recommend this pattern to be able to use async/await everywhere
